@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { createInitialSeedState, STORAGE_KEY } from '../data/seedData';
+import { createInitialSeedState, SEED_MENU, STORAGE_KEY } from '../data/seedData';
 import {
   DiscountType,
   Invoice,
@@ -9,13 +9,28 @@ import {
   PaymentMethod,
   PosState,
   ShiftRecord,
+  TableEntity,
   TableOrder,
+  ZoneName,
 } from '../types/pos';
 import {
   calculateTotals,
   generateInvoiceCode,
   generateShiftCode,
 } from '../utils/format';
+
+function hydrateMenuImages(menu: MenuItem[]): MenuItem[] {
+  const seedById = new Map(SEED_MENU.map((m) => [m.id, m.imageUrl]));
+  const seedByCode = new Map(SEED_MENU.map((m) => [m.code.toUpperCase(), m.imageUrl]));
+  return menu.map((item) => ({
+    ...item,
+    imageUrl:
+      item.imageUrl ||
+      seedById.get(item.id) ||
+      seedByCode.get(item.code.toUpperCase()) ||
+      '',
+  }));
+}
 
 function loadInitialState(): PosState {
   try {
@@ -37,6 +52,7 @@ function loadInitialState(): PosState {
     return {
       ...createInitialSeedState(),
       ...parsed,
+      menu: hydrateMenuImages(parsed.menu),
     };
   } catch {
     return createInitialSeedState();
@@ -79,16 +95,72 @@ export interface CheckoutPayload {
   amountReceived: number;
 }
 
-export function usePosStore() {
+export function usePosStore(authToken: string | null) {
   const [state, setState] = useState<PosState>(() => loadInitialState());
+  const [serverHydrated, setServerHydrated] = useState(false);
 
+  // Pull shared server POS state when authenticated
+  useEffect(() => {
+    if (!authToken) {
+      setServerHydrated(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/pos/state', {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { state?: Partial<PosState> | null };
+        if (cancelled) return;
+        if (
+          data.state &&
+          Array.isArray(data.state.tables) &&
+          Array.isArray(data.state.menu) &&
+          typeof data.state.orders === 'object' &&
+          Array.isArray(data.state.invoices) &&
+          Array.isArray(data.state.shifts)
+        ) {
+          setState({
+            ...createInitialSeedState(),
+            ...data.state,
+            menu: hydrateMenuImages(data.state.menu),
+          });
+        }
+      } catch {
+        // Keep local fallback state if network request fails
+      } finally {
+        if (!cancelled) setServerHydrated(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken]);
+
+  // Persist locally and sync to server when authenticated
   useEffect(() => {
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch {
-      // Ignore quota errors silently in restricted storage modes
+      // Ignore quota errors
     }
-  }, [state]);
+
+    if (!authToken || !serverHydrated) return;
+    const timer = window.setTimeout(() => {
+      void fetch('/api/pos/state', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ state }),
+      }).catch(() => {});
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [state, authToken, serverHydrated]);
 
   const openTable = useCallback((tableId: string, guests?: number): string => {
     let resolvedOrderId = '';
@@ -710,7 +782,7 @@ export function usePosStore() {
       name: string;
       category: MenuCategory;
       price: number;
-      description: string;
+      imageUrl: string;
       available: boolean;
     }): { ok: boolean; error?: string } => {
       const code = input.code.trim().toUpperCase();
@@ -734,7 +806,7 @@ export function usePosStore() {
           category: input.category,
           price: Math.round(input.price),
           available: input.available,
-          description: input.description.trim(),
+          imageUrl: input.imageUrl.trim(),
         };
         return {
           ...prev,
@@ -754,7 +826,7 @@ export function usePosStore() {
         name: string;
         category: MenuCategory;
         price: number;
-        description: string;
+        imageUrl: string;
         available: boolean;
       }
     ): { ok: boolean; error?: string } => {
@@ -783,7 +855,7 @@ export function usePosStore() {
                   category: input.category,
                   price: Math.round(input.price),
                   available: input.available,
-                  description: input.description.trim(),
+                  imageUrl: input.imageUrl.trim(),
                 }
               : m
           ),
@@ -831,6 +903,7 @@ export function usePosStore() {
       setState({
         ...createInitialSeedState(),
         ...parsed,
+        menu: hydrateMenuImages(parsed.menu),
       });
       return { ok: true };
     } catch {
@@ -841,6 +914,88 @@ export function usePosStore() {
   const resetSampleData = useCallback(() => {
     const fresh = createInitialSeedState();
     setState(fresh);
+  }, []);
+
+  const addTable = useCallback(
+    (input: { name: string; zone: ZoneName; capacity: number }): { ok: boolean; error?: string } => {
+      const name = input.name.trim();
+      const capacity = Math.max(1, Math.min(30, Math.round(input.capacity || 2)));
+      if (!name) {
+        return { ok: false, error: 'Tên bàn không được để trống.' };
+      }
+      let result: { ok: boolean; error?: string } = { ok: true };
+      setState((prev) => {
+        if (prev.tables.some((t) => t.name.toLowerCase() === name.toLowerCase())) {
+          result = { ok: false, error: `Bàn "${name}" đã tồn tại trong sơ đồ.` };
+          return prev;
+        }
+        const newTable: TableEntity = {
+          id: makeId('t'),
+          name,
+          zone: input.zone,
+          capacity,
+          status: 'available',
+          activeOrderId: null,
+        };
+        return {
+          ...prev,
+          tables: [...prev.tables, newTable],
+        };
+      });
+      return result;
+    },
+    []
+  );
+
+  const updateTable = useCallback(
+    (
+      id: string,
+      input: { name: string; zone: ZoneName; capacity: number }
+    ): { ok: boolean; error?: string } => {
+      const name = input.name.trim();
+      const capacity = Math.max(1, Math.min(30, Math.round(input.capacity || 2)));
+      if (!name) {
+        return { ok: false, error: 'Tên bàn không được để trống.' };
+      }
+      let result: { ok: boolean; error?: string } = { ok: true };
+      setState((prev) => {
+        if (prev.tables.some((t) => t.id !== id && t.name.toLowerCase() === name.toLowerCase())) {
+          result = { ok: false, error: `Tên bàn "${name}" đã được sử dụng.` };
+          return prev;
+        }
+        return {
+          ...prev,
+          tables: prev.tables.map((t) =>
+            t.id === id ? { ...t, name, zone: input.zone, capacity } : t
+          ),
+        };
+      });
+      return result;
+    },
+    []
+  );
+
+  const deleteTable = useCallback((id: string): { ok: boolean; error?: string } => {
+    let result: { ok: boolean; error?: string } = { ok: true };
+    setState((prev) => {
+      const target = prev.tables.find((t) => t.id === id);
+      if (!target) {
+        result = { ok: false, error: 'Không tìm thấy bàn cần xóa.' };
+        return prev;
+      }
+      if (target.status === 'occupied') {
+        result = {
+          ok: false,
+          error: 'Không thể xóa bàn đang có khách. Hãy thanh toán hoặc chuyển bàn trước.',
+        };
+        return prev;
+      }
+      return {
+        ...prev,
+        tables: prev.tables.filter((t) => t.id !== id),
+      };
+    });
+    return result;
   }, []);
 
   return {
@@ -863,6 +1018,9 @@ export function usePosStore() {
     updateMenuItem,
     toggleMenuAvailability,
     deleteMenuItem,
+    addTable,
+    updateTable,
+    deleteTable,
     exportBackupJson,
     importBackupJson,
     resetSampleData,

@@ -16,6 +16,8 @@ interface ReportsViewProps {
   invoices: Invoice[];
   shifts: ShiftRecord[];
   activeShift: ShiftRecord | null;
+  canVoidInvoice: boolean;
+  defaultCashierName: string;
   onOpenShift: (cashierName: string, openingCash: number) => void;
   onCloseShift: (actualClosingCash: number, note: string) => void;
   onVoidInvoice: (invoiceId: string, reason: string) => void;
@@ -29,6 +31,8 @@ export function ReportsView({
   invoices,
   shifts,
   activeShift,
+  canVoidInvoice,
+  defaultCashierName,
   onOpenShift,
   onCloseShift,
   onVoidInvoice,
@@ -50,7 +54,7 @@ export function ReportsView({
   const [voidReason, setVoidReason] = useState('');
 
   // Open shift form
-  const [cashierName, setCashierName] = useState('Minh Anh');
+  const [cashierName, setCashierName] = useState(defaultCashierName || 'Minh Anh');
   const [openingCashInput, setOpeningCashInput] = useState('2000000');
 
   // Close shift form
@@ -474,7 +478,7 @@ export function ReportsView({
                           <Printer className="w-3.5 h-3.5" />
                           <span>Xem / In</span>
                         </button>
-                        {inv.status === 'paid' && (
+                        {canVoidInvoice && inv.status === 'paid' && (
                           <button
                             type="button"
                             onClick={() => {

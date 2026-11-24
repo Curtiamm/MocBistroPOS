@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, SlidersHorizontal } from 'lucide-react';
+import { AuthScreen } from './components/AuthScreen';
 import { CheckoutModal } from './components/CheckoutModal';
 import { DataBackupModal } from './components/DataBackupModal';
 import { FloorPlanView } from './components/FloorPlanView';
@@ -8,12 +9,18 @@ import { OrderPosView } from './components/OrderPosView';
 import { ReceiptPreviewModal } from './components/ReceiptPreviewModal';
 import { ReportsView } from './components/ReportsView';
 import { Sidebar } from './components/Sidebar';
+import { StaffManagerView } from './components/StaffManagerView';
+import { TableManagerModal } from './components/TableManagerModal';
 import { TableOperationsModal } from './components/TableOperationsModal';
 import { ToastContainer } from './components/ToastContainer';
 import { CheckoutPayload, usePosStore } from './hooks/usePosStore';
-import { ActiveView, Invoice, ToastMessage } from './types/pos';
+import { ActiveView, Invoice, ToastMessage, UserProfile } from './types/pos';
 
 export default function App() {
+  // In-memory session state (Bearer token is never persisted in localStorage/sessionStorage)
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+
   const {
     state,
     openTable,
@@ -34,10 +41,13 @@ export default function App() {
     updateMenuItem,
     toggleMenuAvailability,
     deleteMenuItem,
+    addTable,
+    updateTable,
+    deleteTable,
     exportBackupJson,
     importBackupJson,
     resetSampleData,
-  } = usePosStore();
+  } = usePosStore(authToken);
 
   const [activeView, setActiveView] = useState<ActiveView>('floor');
   const [selectedTableId, setSelectedTableId] = useState<string | null>(() => {
@@ -50,9 +60,13 @@ export default function App() {
   const [checkoutTableId, setCheckoutTableId] = useState<string | null>(null);
   const [receiptInvoice, setReceiptInvoice] = useState<Invoice | null>(null);
   const [showBackupModal, setShowBackupModal] = useState(false);
+  const [showTableManagerModal, setShowTableManagerModal] = useState(false);
   const [openCreateMenuDrawer, setOpenCreateMenuDrawer] = useState(false);
+  const [openCreateStaffDrawer, setOpenCreateStaffDrawer] = useState(false);
   const [shiftModalTrigger, setShiftModalTrigger] = useState<'open' | 'close' | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const isManager = currentUser?.role === 'manager';
 
   const notify = useCallback(
     (type: ToastMessage['type'], title: string, description?: string) => {
@@ -68,6 +82,42 @@ export default function App() {
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  const handleAuthenticated = useCallback(
+    (token: string, user: UserProfile) => {
+      setAuthToken(token);
+      setCurrentUser(user);
+      setActiveView('floor');
+      notify(
+        'success',
+        `Xin chào, ${user.fullName}`,
+        user.role === 'manager'
+          ? 'Bạn đang đăng nhập với quyền Quản lý.'
+          : 'Bạn đang đăng nhập với quyền Nhân viên.'
+      );
+    },
+    [notify]
+  );
+
+  const handleLogout = useCallback(async () => {
+    if (authToken) {
+      try {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+      } catch {
+        // Ignore network errors on logout
+      }
+    }
+    setAuthToken(null);
+    setCurrentUser(null);
+    setActiveView('floor');
+    setShowTableManagerModal(false);
+    setShowBackupModal(false);
+    setOpenCreateMenuDrawer(false);
+    setOpenCreateStaffDrawer(false);
+  }, [authToken]);
 
   const activeShift = useMemo(() => {
     if (!state.activeShiftId) return null;
@@ -136,51 +186,90 @@ export default function App() {
     [state.tables, selectedTableId]
   );
 
-  // Contextual Header Breadcrumb & Single Primary Action
+  const safeActiveView: ActiveView =
+    activeView === 'staff' && !isManager ? 'floor' : activeView;
+
   const headerMeta = useMemo(() => {
-    switch (activeView) {
+    switch (safeActiveView) {
       case 'floor':
-        return {
-          breadcrumb: 'Mộc Bistro / Sơ đồ bàn',
-          actionLabel: activeShift ? 'Chốt ca làm' : 'Mở ca làm',
-          onAction: () => {
-            setActiveView('reports');
-            setShiftModalTrigger(activeShift ? 'close' : 'open');
-          },
-        };
+        return isManager
+          ? {
+              breadcrumb: 'Mộc Bistro / Sơ đồ bàn',
+              actionLabel: 'Quản lý sơ đồ bàn',
+              actionIcon: 'sliders' as const,
+              onAction: () => setShowTableManagerModal(true),
+            }
+          : {
+              breadcrumb: 'Mộc Bistro / Sơ đồ bàn',
+              actionLabel: activeShift ? 'Chốt ca làm' : 'Mở ca làm',
+              actionIcon: 'none' as const,
+              onAction: () => {
+                setActiveView('reports');
+                setShiftModalTrigger(activeShift ? 'close' : 'open');
+              },
+            };
       case 'order':
         return {
           breadcrumb: selectedTable
             ? `Mộc Bistro / Gọi món / ${selectedTable.name}`
             : 'Mộc Bistro / Gọi món',
           actionLabel: 'Về sơ đồ bàn',
+          actionIcon: 'none' as const,
           onAction: () => setActiveView('floor'),
         };
       case 'reports':
         return {
           breadcrumb: 'Mộc Bistro / Doanh thu & Ca làm',
           actionLabel: activeShift ? 'Chốt ca làm' : 'Mở ca mới',
+          actionIcon: 'none' as const,
           onAction: () => setShiftModalTrigger(activeShift ? 'close' : 'open'),
         };
       case 'menu':
+        return isManager
+          ? {
+              breadcrumb: 'Mộc Bistro / Quản lý thực đơn',
+              actionLabel: 'Thêm món mới',
+              actionIcon: 'plus' as const,
+              onAction: () => setOpenCreateMenuDrawer(true),
+            }
+          : {
+              breadcrumb: 'Mộc Bistro / Thực đơn phục vụ',
+              actionLabel: 'Sang gọi món',
+              actionIcon: 'none' as const,
+              onAction: () => setActiveView('order'),
+            };
+      case 'staff':
         return {
-          breadcrumb: 'Mộc Bistro / Quản lý thực đơn',
-          actionLabel: 'Thêm món mới',
-          onAction: () => setOpenCreateMenuDrawer(true),
+          breadcrumb: 'Mộc Bistro / Hồ sơ nhân viên',
+          actionLabel: 'Thêm nhân viên',
+          actionIcon: 'plus' as const,
+          onAction: () => setOpenCreateStaffDrawer(true),
         };
     }
-  }, [activeView, activeShift, selectedTable]);
+  }, [safeActiveView, isManager, activeShift, selectedTable]);
+
+  // Require login before entering the POS workspace
+  if (!authToken || !currentUser) {
+    return (
+      <>
+        <AuthScreen onAuthenticated={handleAuthenticated} />
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen flex bg-[#F7F4EE] text-[#231D19]">
       {/* Fixed 240px Desktop Sidebar */}
       <Sidebar
-        activeView={activeView}
+        activeView={safeActiveView}
         onSelectView={setActiveView}
         occupiedCount={occupiedCount}
         totalTables={state.tables.length}
         activeShift={activeShift}
+        currentUser={currentUser}
         onOpenBackup={() => setShowBackupModal(true)}
+        onLogout={() => void handleLogout()}
       />
 
       {/* Main Content Area */}
@@ -196,14 +285,17 @@ export default function App() {
             onClick={headerMeta.onAction}
             className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-[#1E4D3B] hover:bg-[#163B2D] rounded-lg transition-colors whitespace-nowrap shrink-0"
           >
-            {activeView === 'menu' && <Plus className="w-3.5 h-3.5" />}
+            {headerMeta.actionIcon === 'plus' && <Plus className="w-3.5 h-3.5" />}
+            {headerMeta.actionIcon === 'sliders' && (
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+            )}
             <span>{headerMeta.actionLabel}</span>
           </button>
         </header>
 
         {/* Active View Viewport */}
         <main className="no-print flex-1 overflow-y-auto">
-          {activeView === 'floor' && (
+          {safeActiveView === 'floor' && (
             <FloorPlanView
               tables={state.tables}
               orders={state.orders}
@@ -213,7 +305,7 @@ export default function App() {
             />
           )}
 
-          {activeView === 'order' && (
+          {safeActiveView === 'order' && (
             <OrderPosView
               tables={state.tables}
               orders={state.orders}
@@ -237,11 +329,13 @@ export default function App() {
             />
           )}
 
-          {activeView === 'reports' && (
+          {safeActiveView === 'reports' && (
             <ReportsView
               invoices={state.invoices}
               shifts={state.shifts}
               activeShift={activeShift}
+              canVoidInvoice={isManager}
+              defaultCashierName={currentUser.fullName}
               onOpenShift={openShift}
               onCloseShift={closeShift}
               onVoidInvoice={voidInvoice}
@@ -252,9 +346,10 @@ export default function App() {
             />
           )}
 
-          {activeView === 'menu' && (
+          {safeActiveView === 'menu' && (
             <MenuManagerView
               menu={state.menu}
+              canManageMenu={isManager}
               openCreateDrawer={openCreateMenuDrawer}
               onCloseCreateDrawer={() => setOpenCreateMenuDrawer(false)}
               onAddMenuItem={addMenuItem}
@@ -264,10 +359,31 @@ export default function App() {
               onNotify={notify}
             />
           )}
+
+          {safeActiveView === 'staff' && isManager && (
+            <StaffManagerView
+              authToken={authToken}
+              currentUser={currentUser}
+              openCreateDrawer={openCreateStaffDrawer}
+              onCloseCreateDrawer={() => setOpenCreateStaffDrawer(false)}
+              onNotify={notify}
+            />
+          )}
         </main>
       </div>
 
       {/* Modals */}
+      {showTableManagerModal && isManager && (
+        <TableManagerModal
+          tables={state.tables}
+          onAddTable={addTable}
+          onUpdateTable={updateTable}
+          onDeleteTable={deleteTable}
+          onNotify={notify}
+          onClose={() => setShowTableManagerModal(false)}
+        />
+      )}
+
       {tableOpsTarget && (
         <TableOperationsModal
           sourceTable={tableOpsTarget.table}
@@ -306,7 +422,7 @@ export default function App() {
         />
       )}
 
-      {showBackupModal && (
+      {showBackupModal && isManager && (
         <DataBackupModal
           onExportJson={exportBackupJson}
           onImportJson={importBackupJson}

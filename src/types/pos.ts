@@ -20,7 +20,8 @@ export interface MenuItem {
   category: MenuCategory;
   price: number;
   available: boolean;
-  description: string;
+  imageUrl: string;
+  description?: string;
 }
 
 export interface OrderItem {
@@ -108,7 +109,24 @@ export interface PosState {
   invoiceCounter: number;
 }
 
-export type ActiveView = 'floor' | 'order' | 'reports' | 'menu';
+export type UserRole = 'manager' | 'staff';
+
+export type UserStatus = 'active' | 'locked';
+
+export interface UserProfile {
+  id: string;
+  username: string;
+  fullName: string;
+  role: UserRole;
+  position: string;
+  phone: string;
+  shiftSchedule: string;
+  status: UserStatus;
+  createdAt: string;
+  isPrimaryAdmin?: boolean;
+}
+
+export type ActiveView = 'floor' | 'order' | 'reports' | 'menu' | 'staff';
 
 export interface ToastMessage {
   id: string;

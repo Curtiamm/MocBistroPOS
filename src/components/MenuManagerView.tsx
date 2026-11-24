@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react';
-import { Pencil, Search, Trash2, X } from 'lucide-react';
+import { ChangeEvent, useMemo, useRef, useState } from 'react';
+import { ImagePlus, Pencil, Search, Trash2, X } from 'lucide-react';
 import { MenuCategory, MenuItem } from '../types/pos';
 import { formatVnd } from '../utils/format';
+import { DishThumbnail } from './DishThumbnail';
 
 interface MenuManagerViewProps {
   menu: MenuItem[];
+  canManageMenu: boolean;
   openCreateDrawer: boolean;
   onCloseCreateDrawer: () => void;
   onAddMenuItem: (input: {
@@ -12,7 +14,7 @@ interface MenuManagerViewProps {
     name: string;
     category: MenuCategory;
     price: number;
-    description: string;
+    imageUrl: string;
     available: boolean;
   }) => { ok: boolean; error?: string };
   onUpdateMenuItem: (
@@ -22,7 +24,7 @@ interface MenuManagerViewProps {
       name: string;
       category: MenuCategory;
       price: number;
-      description: string;
+      imageUrl: string;
       available: boolean;
     }
   ) => { ok: boolean; error?: string };
@@ -46,8 +48,50 @@ const MENU_CATEGORIES_ONLY: MenuCategory[] = [
   'Tráng miệng',
 ];
 
+function compressImageFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const targetW = 480;
+        const targetH = 360;
+        const canvas = document.createElement('canvas');
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(typeof reader.result === 'string' ? reader.result : '');
+          return;
+        }
+        // Center-crop to 4:3
+        const srcRatio = img.width / img.height;
+        const targetRatio = targetW / targetH;
+        let sx = 0;
+        let sy = 0;
+        let sw = img.width;
+        let sh = img.height;
+        if (srcRatio > targetRatio) {
+          sw = img.height * targetRatio;
+          sx = (img.width - sw) / 2;
+        } else {
+          sh = img.width / targetRatio;
+          sy = (img.height - sh) / 2;
+        }
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      };
+      img.onerror = () => reject(new Error('Không thể đọc ảnh đã chọn.'));
+      img.src = typeof reader.result === 'string' ? reader.result : '';
+    };
+    reader.onerror = () => reject(new Error('Không thể tải tệp ảnh.'));
+    reader.readAsDataURL(file);
+  });
+}
+
 export function MenuManagerView({
   menu,
+  canManageMenu,
   openCreateDrawer,
   onCloseCreateDrawer,
   onAddMenuItem,
@@ -60,17 +104,18 @@ export function MenuManagerView({
   const [search, setSearch] = useState('');
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   // Drawer form fields
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [category, setCategory] = useState<MenuCategory>('Món chính');
   const [price, setPrice] = useState('');
-  const [description, setDescription] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
   const [available, setAvailable] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const isDrawerOpen = openCreateDrawer || editingItem !== null;
+  const isDrawerOpen = canManageMenu && (openCreateDrawer || editingItem !== null);
 
   const startEdit = (item: MenuItem) => {
     onCloseCreateDrawer();
@@ -79,7 +124,7 @@ export function MenuManagerView({
     setName(item.name);
     setCategory(item.category);
     setPrice(String(item.price));
-    setDescription(item.description);
+    setImageUrl(item.imageUrl || '');
     setAvailable(item.available);
     setFormError(null);
   };
@@ -89,7 +134,7 @@ export function MenuManagerView({
     setName('');
     setCategory('Món chính');
     setPrice('');
-    setDescription('');
+    setImageUrl('');
     setAvailable(true);
     setFormError(null);
   };
@@ -98,6 +143,19 @@ export function MenuManagerView({
     setEditingItem(null);
     onCloseCreateDrawer();
     resetDrawerFields();
+  };
+
+  const handleUploadImage = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFormError(null);
+    try {
+      const compressed = await compressImageFile(file);
+      setImageUrl(compressed);
+    } catch {
+      setFormError('Không thể xử lý tệp hình ảnh. Vui lòng chọn tệp JPG hoặc PNG.');
+    }
+    e.target.value = '';
   };
 
   const handleSave = () => {
@@ -117,7 +175,7 @@ export function MenuManagerView({
       name,
       category,
       price: numericPrice,
-      description,
+      imageUrl,
       available,
     };
 
@@ -199,7 +257,7 @@ export function MenuManagerView({
         </div>
       </div>
 
-      {/* High-Density Menu Table */}
+      {/* High-Density Menu Table with Dish Thumbnails */}
       <div className="bg-white border border-[#E5DDD2] rounded-xl overflow-hidden">
         {filteredMenu.length === 0 ? (
           <div className="py-16 text-center space-y-2">
@@ -223,34 +281,41 @@ export function MenuManagerView({
               <thead>
                 <tr className="border-b border-[#E5DDD2] text-xs text-[#6B6056] bg-[#FAF8F4]">
                   <th className="text-left font-medium px-5 py-3">Mã</th>
-                  <th className="text-left font-medium px-4 py-3">Tên món & Mô tả</th>
+                  <th className="text-left font-medium px-4 py-3">Hình ảnh & Tên món</th>
                   <th className="text-left font-medium px-4 py-3">Danh mục</th>
                   <th className="text-right font-medium px-4 py-3">Đơn giá</th>
                   <th className="text-left font-medium px-4 py-3">Trạng thái phục vụ</th>
-                  <th className="text-right font-medium px-5 py-3">Thao tác</th>
+                  {canManageMenu && (
+                    <th className="text-right font-medium px-5 py-3">Thao tác</th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E5DDD2]/70">
                 {filteredMenu.map((item) => (
                   <tr key={item.id} className="hover:bg-[#FAF8F4]">
-                    <td className="px-5 py-3 font-tabular text-xs font-semibold text-[#6B6056] whitespace-nowrap">
+                    <td className="px-5 py-2.5 font-tabular text-xs font-semibold text-[#6B6056] whitespace-nowrap">
                       {item.code}
                     </td>
-                    <td className="px-4 py-3 max-w-md">
-                      <p className="font-semibold text-[#231D19]">{item.name}</p>
-                      {item.description && (
-                        <p className="text-xs text-[#6B6056] truncate mt-0.5">
-                          {item.description}
+                    <td className="px-4 py-2.5 max-w-md">
+                      <div className="flex items-center gap-3.5">
+                        <DishThumbnail
+                          src={item.imageUrl}
+                          alt={item.name}
+                          className="w-16 aspect-[4/3] rounded-md border border-[#E5DDD2] shrink-0"
+                          iconSize="w-4 h-4"
+                        />
+                        <p className="font-semibold text-[#231D19] leading-snug">
+                          {item.name}
                         </p>
-                      )}
+                      </div>
                     </td>
-                    <td className="px-4 py-3 text-xs text-[#6B6056] whitespace-nowrap">
+                    <td className="px-4 py-2.5 text-xs text-[#6B6056] whitespace-nowrap">
                       {item.category}
                     </td>
-                    <td className="px-4 py-3 text-right font-tabular font-semibold text-[#231D19] whitespace-nowrap">
+                    <td className="px-4 py-2.5 text-right font-tabular font-semibold text-[#231D19] whitespace-nowrap">
                       {formatVnd(item.price)}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className="px-4 py-2.5 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => {
@@ -269,49 +334,51 @@ export function MenuManagerView({
                         {item.available ? 'Còn món' : 'Tạm hết'}
                       </button>
                     </td>
-                    <td className="px-5 py-3 text-right whitespace-nowrap">
-                      {confirmDeleteId === item.id ? (
-                        <div className="inline-flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDeleteId(null)}
-                            className="px-2.5 py-1 text-xs text-[#6B6056] border border-[#E5DDD2] rounded hover:bg-[#F7F4EE]"
-                          >
-                            Hủy
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onDeleteMenuItem(item.id);
-                              setConfirmDeleteId(null);
-                              onNotify('info', `Đã xóa món ${item.name}`);
-                            }}
-                            className="px-2.5 py-1 text-xs font-semibold text-white bg-[#9E2A2B] hover:bg-[#7F2021] rounded"
-                          >
-                            Xóa hẳn
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="inline-flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => startEdit(item)}
-                            className="p-1.5 text-[#6B6056] hover:text-[#231D19] hover:bg-[#EFEAE0] rounded-md transition-colors"
-                            aria-label={`Chỉnh sửa ${item.name}`}
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDeleteId(item.id)}
-                            className="p-1.5 text-[#6B6056] hover:text-[#9E2A2B] hover:bg-[#9E2A2B]/8 rounded-md transition-colors"
-                            aria-label={`Xóa ${item.name}`}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      )}
-                    </td>
+                    {canManageMenu && (
+                      <td className="px-5 py-2.5 text-right whitespace-nowrap">
+                        {confirmDeleteId === item.id ? (
+                          <div className="inline-flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(null)}
+                              className="px-2.5 py-1 text-xs text-[#6B6056] border border-[#E5DDD2] rounded hover:bg-[#F7F4EE]"
+                            >
+                              Hủy
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onDeleteMenuItem(item.id);
+                                setConfirmDeleteId(null);
+                                onNotify('info', `Đã xóa món ${item.name}`);
+                              }}
+                              className="px-2.5 py-1 text-xs font-semibold text-white bg-[#9E2A2B] hover:bg-[#7F2021] rounded"
+                            >
+                              Xóa hẳn
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => startEdit(item)}
+                              className="p-1.5 text-[#6B6056] hover:text-[#231D19] hover:bg-[#EFEAE0] rounded-md transition-colors"
+                              aria-label={`Chỉnh sửa ${item.name}`}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(item.id)}
+                              className="p-1.5 text-[#6B6056] hover:text-[#9E2A2B] hover:bg-[#9E2A2B]/8 rounded-md transition-colors"
+                              aria-label={`Xóa ${item.name}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -344,6 +411,45 @@ export function MenuManagerView({
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {/* Dish Image Picker & Preview */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-[#231D19]">
+                  Hình ảnh món ăn (tỉ lệ 4:3)
+                </label>
+                <DishThumbnail
+                  src={imageUrl}
+                  alt={name || 'Ảnh món ăn'}
+                  className="w-full aspect-[4/3] rounded-lg border border-[#E5DDD2]"
+                  iconSize="w-8 h-8"
+                />
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleUploadImage}
+                  className="hidden"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => imageInputRef.current?.click()}
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-[#231D19] bg-[#F7F4EE] hover:bg-[#EFEAE0] border border-[#E5DDD2] rounded-lg transition-colors whitespace-nowrap"
+                  >
+                    <ImagePlus className="w-4 h-4" />
+                    <span>{imageUrl ? 'Đổi ảnh từ máy' : 'Tải ảnh từ máy'}</span>
+                  </button>
+                  {imageUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setImageUrl('')}
+                      className="px-3 py-2 text-xs font-medium text-[#9E2A2B] hover:bg-[#9E2A2B]/8 border border-[#E5DDD2] rounded-lg transition-colors whitespace-nowrap"
+                    >
+                      Gỡ ảnh
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-[#231D19]">Mã món *</label>
@@ -392,17 +498,6 @@ export function MenuManagerView({
                   onChange={(e) => setPrice(e.target.value)}
                   placeholder="VD: 195000"
                   className="w-full px-3 py-2 text-sm font-tabular border border-[#E5DDD2] rounded-lg focus:outline-none focus:border-[#1E4D3B]"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-[#231D19]">Mô tả ngắn</label>
-                <textarea
-                  rows={3}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Thành phần chính hoặc cách chế biến để nhân viên dễ tư vấn..."
-                  className="w-full px-3 py-2 text-sm border border-[#E5DDD2] rounded-lg focus:outline-none focus:border-[#1E4D3B] resize-none"
                 />
               </div>
 

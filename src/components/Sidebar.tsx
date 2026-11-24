@@ -4,8 +4,10 @@ import {
   ClipboardList,
   Database,
   LayoutGrid,
+  LogOut,
+  Users,
 } from 'lucide-react';
-import { ActiveView, ShiftRecord } from '../types/pos';
+import { ActiveView, ShiftRecord, UserProfile } from '../types/pos';
 import { formatTime } from '../utils/format';
 
 interface SidebarProps {
@@ -14,19 +16,10 @@ interface SidebarProps {
   occupiedCount: number;
   totalTables: number;
   activeShift: ShiftRecord | null;
+  currentUser: UserProfile;
   onOpenBackup: () => void;
+  onLogout: () => void;
 }
-
-const NAV_ITEMS: Array<{
-  id: ActiveView;
-  label: string;
-  icon: typeof LayoutGrid;
-}> = [
-  { id: 'floor', label: 'Sơ đồ bàn', icon: LayoutGrid },
-  { id: 'order', label: 'Gọi món', icon: ClipboardList },
-  { id: 'reports', label: 'Doanh thu & Ca', icon: BarChart3 },
-  { id: 'menu', label: 'Thực đơn', icon: BookOpen },
-];
 
 export function Sidebar({
   activeView,
@@ -34,8 +27,26 @@ export function Sidebar({
   occupiedCount,
   totalTables,
   activeShift,
+  currentUser,
   onOpenBackup,
+  onLogout,
 }: SidebarProps) {
+  const isManager = currentUser.role === 'manager';
+
+  const navItems: Array<{
+    id: ActiveView;
+    label: string;
+    icon: typeof LayoutGrid;
+  }> = [
+    { id: 'floor', label: 'Sơ đồ bàn', icon: LayoutGrid },
+    { id: 'order', label: 'Gọi món', icon: ClipboardList },
+    { id: 'menu', label: 'Thực đơn', icon: BookOpen },
+    { id: 'reports', label: 'Doanh thu & Ca', icon: BarChart3 },
+    ...(isManager
+      ? [{ id: 'staff' as const, label: 'Hồ sơ nhân viên', icon: Users }]
+      : []),
+  ];
+
   return (
     <aside className="no-print w-60 shrink-0 bg-white border-r border-[#E5DDD2] flex flex-col justify-between min-h-screen select-none">
       <div>
@@ -48,7 +59,7 @@ export function Sidebar({
 
         {/* Navigation Links */}
         <nav className="p-3 space-y-1" aria-label="Điều hướng chính">
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeView === item.id;
             return (
@@ -81,9 +92,23 @@ export function Sidebar({
         </nav>
       </div>
 
-      {/* Bottom Shift Summary & Local Storage Backup */}
+      {/* Bottom User Identity, Shift Summary & Actions */}
       <div className="p-4 border-t border-[#E5DDD2] space-y-3">
-        <div className="space-y-1 px-1">
+        {/* Logged-in User Info */}
+        <div className="px-1 pb-3 border-b border-[#E5DDD2]/80">
+          <p className="text-sm font-semibold text-[#231D19] truncate">
+            {currentUser.fullName}
+          </p>
+          <p className="text-xs text-[#6B6056] truncate mt-0.5">
+            <span className={isManager ? 'font-semibold text-[#1E4D3B]' : ''}>
+              {isManager ? 'Quản lý' : 'Nhân viên'}
+            </span>{' '}
+            · <span className="font-tabular">@{currentUser.username}</span>
+          </p>
+        </div>
+
+        {/* Active Shift Summary */}
+        <div className="space-y-0.5 px-1">
           <p className="text-xs font-medium text-[#6B6056]">
             {activeShift ? `Ca đang mở · ${activeShift.code}` : 'Chưa mở ca làm'}
           </p>
@@ -93,20 +118,31 @@ export function Sidebar({
               <span className="font-tabular">{formatTime(activeShift.openedAt)}</span>
             </p>
           ) : (
-            <p className="text-xs text-[#B4691E]">
-              Vào Doanh thu & Ca để mở ca
-            </p>
+            <p className="text-xs text-[#B4691E]">Vào Doanh thu & Ca để mở ca</p>
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={onOpenBackup}
-          className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-[#6B6056] hover:text-[#231D19] hover:bg-[#F7F4EE] border border-[#E5DDD2] rounded-lg transition-colors whitespace-nowrap"
-        >
-          <Database className="w-3.5 h-3.5 shrink-0" />
-          <span>Sao lưu dữ liệu máy</span>
-        </button>
+        <div className="space-y-2 pt-1">
+          {isManager && (
+            <button
+              type="button"
+              onClick={onOpenBackup}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-[#6B6056] hover:text-[#231D19] hover:bg-[#F7F4EE] border border-[#E5DDD2] rounded-lg transition-colors whitespace-nowrap"
+            >
+              <Database className="w-3.5 h-3.5 shrink-0" />
+              <span>Sao lưu dữ liệu</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={onLogout}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-[#9E2A2B] hover:bg-[#9E2A2B]/8 border border-[#E5DDD2] rounded-lg transition-colors whitespace-nowrap"
+          >
+            <LogOut className="w-3.5 h-3.5 shrink-0" />
+            <span>Đăng xuất</span>
+          </button>
+        </div>
       </div>
     </aside>
   );

@@ -19,6 +19,7 @@ import {
   formatTime,
   formatVnd,
 } from '../utils/format';
+import { DishThumbnail } from './DishThumbnail';
 
 interface OrderPosViewProps {
   tables: TableEntity[];
@@ -207,46 +208,58 @@ export function OrderPosView({
                     type="button"
                     disabled={disabled}
                     onClick={() => selectedTable && onAddItem(selectedTable.id, item)}
-                    className={`text-left p-4 rounded-xl border transition-all duration-150 flex flex-col justify-between min-h-[126px] ${
+                    className={`group text-left rounded-xl border overflow-hidden transition-all duration-150 flex flex-col justify-between ${
                       !item.available
-                        ? 'bg-[#EFEAE0]/50 border-[#E5DDD2] opacity-65 cursor-not-allowed'
+                        ? 'bg-[#EFEAE0]/50 border-[#E5DDD2] opacity-70 cursor-not-allowed'
                         : !selectedTable
                           ? 'bg-white border-[#E5DDD2] opacity-75 cursor-not-allowed'
                           : 'bg-white border-[#E5DDD2] hover:border-[#1E4D3B] active:scale-[0.99]'
                     }`}
                   >
-                    <div>
-                      <div className="flex items-center justify-between gap-2 text-xs text-[#6B6056]">
-                        <span className="font-tabular">
-                          {item.code} · {item.category}
-                        </span>
-                        {!item.available ? (
-                          <span className="font-semibold text-[#9E2A2B]">Tạm hết</span>
-                        ) : inOrderQty > 0 ? (
-                          <span className="font-tabular font-semibold text-[#1E4D3B]">
-                            Đã gọi ×{inOrderQty}
+                    <div className="relative w-full aspect-[4/3] overflow-hidden bg-[#EFEAE0]">
+                      <DishThumbnail
+                        src={item.imageUrl}
+                        alt={item.name}
+                        className={`w-full h-full transition-transform duration-200 ${
+                          item.available && selectedTable ? 'group-hover:scale-[1.03]' : ''
+                        } ${!item.available ? 'grayscale-[55%]' : ''}`}
+                      />
+                      {!item.available && (
+                        <div className="absolute inset-0 bg-[#231D19]/50 flex items-center justify-center">
+                          <span className="text-xs font-semibold tracking-wide text-white bg-[#231D19]/80 px-3 py-1 rounded-md">
+                            Tạm hết
                           </span>
-                        ) : null}
-                      </div>
-                      <h3 className="text-sm font-semibold text-[#231D19] mt-1.5 leading-snug">
-                        {item.name}
-                      </h3>
-                      {item.description && (
-                        <p className="text-xs text-[#6B6056] mt-1 line-clamp-2 leading-relaxed">
-                          {item.description}
-                        </p>
+                        </div>
                       )}
                     </div>
 
-                    <div className="mt-3 pt-2.5 border-t border-[#E5DDD2]/70 flex items-center justify-between">
-                      <span className="font-tabular text-sm font-bold text-[#231D19]">
-                        {formatVnd(item.price)}
-                      </span>
-                      {item.available && selectedTable && (
-                        <span className="text-xs font-semibold text-[#1E4D3B]">
-                          + Thêm món
+                    <div className="p-3.5 flex-1 flex flex-col justify-between w-full">
+                      <div>
+                        <div className="flex items-center justify-between gap-2 text-xs text-[#6B6056]">
+                          <span className="font-tabular">
+                            {item.code} · {item.category}
+                          </span>
+                          {inOrderQty > 0 && item.available && (
+                            <span className="font-tabular font-semibold text-[#1E4D3B]">
+                              Đã gọi ×{inOrderQty}
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="text-sm font-semibold text-[#231D19] mt-1 leading-snug line-clamp-2">
+                          {item.name}
+                        </h3>
+                      </div>
+
+                      <div className="mt-3 pt-2.5 border-t border-[#E5DDD2]/70 flex items-center justify-between">
+                        <span className="font-tabular text-sm font-bold text-[#231D19]">
+                          {formatVnd(item.price)}
                         </span>
-                      )}
+                        {item.available && selectedTable && (
+                          <span className="text-xs font-semibold text-[#1E4D3B]">
+                            + Thêm
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </button>
                 );
