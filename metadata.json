@@ -1,0 +1,6 @@
+{
+  "name": "Mộc Bistro POS",
+  "description": "Ứng dụng desktop tính tiền nhà hàng phục vụ tại bàn với sơ đồ bàn, tách/gộp bàn, chia hóa đơn, in bill nhiệt 80mm và báo cáo doanh thu theo ca.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

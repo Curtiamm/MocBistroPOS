@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Playfair Display", Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-linen: #F7F4EE;
+  --color-ivory: #FFFFFF;
+  --color-parchment: #EFEAE0;
+  --color-walnut-border: #E5DDD2;
+  --color-espresso: #231D19;
+  --color-walnut: #6B6056;
+  --color-bistro: #1E4D3B;
+  --color-bistro-hover: #163B2D;
+  --color-amber-warm: #B4691E;
+  --color-moss: #1F6E4A;
+  --color-burgundy: #9E2A2B;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--color-linen);
+    color: var(--color-espresso);
+  }
+
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-tabular {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Custom subtle scrollbars for desktop POS panes */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D6CCC0;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #B8ACA0;
+}
+
+/* Dedicated 80mm thermal printer stylesheet */
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+
+  body {
+    background: #FFFFFF !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only-receipt {
+    display: block !important;
+    position: static !important;
+    width: 76mm !important;
+    margin: 0 auto !important;
+    padding: 4mm 2mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #FFFFFF !important;
+    color: #000000 !important;
+  }
+}
